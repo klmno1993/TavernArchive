@@ -1,0 +1,12 @@
+{
+    "display_name": "Tavern Archive",
+    "loading_order": 10,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "TavernArchive contributors",
+    "version": "1.0.0",
+    "homePage": "",
+    "minimum_client_version": "1.12.0"
+}

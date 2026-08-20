@@ -1,0 +1,15 @@
+# 系统/编辑器杂项
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+
+# 本地测试/检查残留
+.linttmp/
+.ta-test.mjs
+.lint-check.mjs
+
+# 依赖（本扩展零依赖，防患未然）
+node_modules/
+package-lock.json
