@@ -1,15 +1,15 @@
 import { eventSource, event_types, getContext } from './src/st.js';
 import { loadFromDb, refreshIndex, rebuildIndex } from './src/indexer.js';
 import { getSettings } from './src/settings.js';
-import { initPanel, openPanel } from './src/ui/panel.js';
+import { initPanel, openPanel, togglePanel } from './src/ui/panel.js';
 import { state } from './src/state.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 
-// 顶部导航栏放大镜图标
+// 顶部导航栏放大镜图标（与自带顶部功能一致：再点一次关闭）
 function addTopBarButton() {
     const btn = $('<div id="ta-top-btn" class="drawer-icon fa-solid fa-magnifying-glass fa-fw closedIcon" title="Tavern Archive · 对话搜索"></div>');
-    btn.on('click', () => openPanel());
+    btn.on('click', () => togglePanel());
     $('#top-settings-holder').append(btn);
 }
 

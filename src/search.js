@@ -74,9 +74,11 @@ export function searchIndex(state, parsed, filters, opts) {
         const tagsOf = filters.chatTags[chatKey] ?? [];
         if (filters.onlyUntagged && tagsOf.length > 0) continue;
         if (filters.tag && !tagsOf.includes(filters.tag)) continue;
+        const favMsgs = filters.onlyMsgFav ? (filters.msgFavorites[chatKey] ?? null) : null;
+        if (filters.onlyMsgFav && !favMsgs) continue;
 
         const chatTs = parseLooseDate(meta.lastMes) ?? 0;
-        if (matchAll) {
+        if (matchAll && !filters.onlyMsgFav) {
             hits.push({ chatKey, meta, i: -1, name: '', isUser: false, ts: chatTs, text: '' });
             if (hits.length >= MAX_HITS) { truncated = true; break; }
             continue;
@@ -84,6 +86,7 @@ export function searchIndex(state, parsed, filters, opts) {
 
         const messages = state.messages.get(chatKey) ?? [];
         for (const msg of messages) {
+            if (filters.onlyMsgFav && !favMsgs[msg.i]) continue;
             if (filters.sender === 'user' && !msg.isUser) continue;
             if (filters.sender === 'char' && msg.isUser) continue;
             if (filters.from != null || filters.to != null) {
@@ -91,13 +94,15 @@ export function searchIndex(state, parsed, filters, opts) {
                 if (filters.from != null && msg.ts < filters.from) continue;
                 if (filters.to != null && msg.ts > filters.to) continue;
             }
-            if (regexObj) {
-                regexObj.lastIndex = 0;
-                if (!regexObj.test(msg.text)) continue;
-            } else {
-                const hay = terms.norm(msg.text);
-                if (terms.excluded.some(t => hay.includes(t))) continue;
-                if (!terms.required.every(t => hay.includes(t))) continue;
+            if (!matchAll) {
+                if (regexObj) {
+                    regexObj.lastIndex = 0;
+                    if (!regexObj.test(msg.text)) continue;
+                } else {
+                    const hay = terms.norm(msg.text);
+                    if (terms.excluded.some(t => hay.includes(t))) continue;
+                    if (!terms.required.every(t => hay.includes(t))) continue;
+                }
             }
             hits.push({ chatKey, meta, i: msg.i, name: msg.name, isUser: msg.isUser, ts: msg.ts ?? chatTs, text: msg.text });
             if (hits.length >= MAX_HITS) { truncated = true; break outer; }

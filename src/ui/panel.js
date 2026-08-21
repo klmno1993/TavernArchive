@@ -48,15 +48,9 @@ export function openPanel(presetQuery = '') {
         console.log('[TavernArchive] 打开面板');
         buildDom();
         isOpen = true;
-        $('#ta-overlay').removeClass('ta-hidden');
-        // 移动端：部分环境下 CSS 层叠会把面板高度算成 0，直接内联视口单位钉死全屏
-        if (window.innerWidth < 768) {
-            document.querySelector('#ta-panel').style.cssText =
-                'position:fixed; top:0; left:0; width:100vw; height:100vh; height:100dvh; max-width:none; border-radius:0; border:none;';
-        } else {
-            document.querySelector('#ta-panel').style.cssText = '';
-        }
+        $('#ta-panel').removeClass('ta-hidden');
         if (presetQuery) $('#ta-q').val(presetQuery);
+        $('#ta-clear').toggleClass('ta-hidden', !$('#ta-q').val());
         rebuildEntityList();
         rebuildTagList();
         updateStatusBar();
@@ -81,7 +75,13 @@ export function openPanel(presetQuery = '') {
 
 export function closePanel() {
     isOpen = false;
-    $('#ta-overlay').addClass('ta-hidden');
+    $('#ta-filters').removeClass('open');
+    $('#ta-panel').addClass('ta-hidden');
+}
+
+export function togglePanel() {
+    if (isOpen) closePanel();
+    else openPanel();
 }
 
 // ---------- DOM ----------
@@ -91,12 +91,12 @@ function buildDom() {
     built = true;
 
     const html = `
-<div id="ta-overlay" class="ta-hidden">
-  <div id="ta-panel">
+<div id="ta-panel" class="ta-hidden">
     <div class="ta-header">
       <div class="ta-searchbox">
         <input id="ta-q" class="text_pole" type="text" autocomplete="off"
                placeholder='搜索全部对话内容… 支持 "短语" 与 -排除' />
+        <span id="ta-clear" class="fa-solid fa-circle-xmark ta-clear ta-hidden" title="清除搜索"></span>
         <div id="ta-regex" class="ta-flag" title="正则表达式">.*</div>
         <div id="ta-case" class="ta-flag" title="区分大小写">Aa</div>
       </div>
@@ -154,8 +154,8 @@ function buildDom() {
           <div class="inline-drawer-toggle inline-drawer-header"><b>收藏与标签</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
           <div class="inline-drawer-content">
-            <label class="checkbox_label"><input type="checkbox" id="ta-onlyfav"><span>★ 仅收藏的聊天</span></label>
-            <label class="checkbox_label"><input type="checkbox" id="ta-untagged"><span>仅无标签的聊天</span></label>
+            <label class="checkbox_label"><input type="checkbox" id="ta-onlyfav"><span>★ 仅收藏<span class="ta-sub">（聊天=收藏的聊天，消息=收藏的消息）</span></span></label>
+            <label class="checkbox_label" id="ta-untagged-row"><input type="checkbox" id="ta-untagged"><span>仅无标签<span class="ta-sub">（仅聊天视图）</span></span></label>
             <div id="ta-tag-list"></div>
           </div>
         </div>
@@ -185,7 +185,6 @@ function buildDom() {
       <div class="menu_button" id="ta-refresh">刷新索引</div>
       <div class="menu_button" id="ta-reindex">重建索引</div>
     </footer>
-  </div>
 </div>`;
 
     $('body').append(html);
@@ -201,11 +200,16 @@ function buildDom() {
 
 function wireEvents() {
     $('#ta-close').on('click', closePanel);
-    $('#ta-overlay').on('click', function (e) {
-        if (e.target === this) closePanel();
-    });
 
-    $('#ta-q').on('input', debounce(runSearch, 300));
+    $('#ta-q').on('input', function () {
+        $('#ta-clear').toggleClass('ta-hidden', !this.value);
+        debouncedSearch();
+    });
+    $('#ta-clear').on('click', function () {
+        $('#ta-q').val('').trigger('focus');
+        $(this).addClass('ta-hidden');
+        runSearch();
+    });
     $('#ta-regex').on('click', function () {
         searchOpts.regex = !searchOpts.regex;
         $(this).toggleClass('ta-on', searchOpts.regex);
@@ -250,8 +254,23 @@ function wireEvents() {
         updateEntitySelBadge();
         runSearch();
     });
+    // 「仅看」：一键只搜该角色/群聊
+    $('#ta-ent-list').on('click', '.ta-ent-only', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const ek = $(this).closest('.ta-ent-row').data('ent');
+        $('#ta-ent-list .ta-ent-row input[type="checkbox"]').prop('checked', false);
+        $(`#ta-ent-list .ta-ent-row[data-ent="${CSS.escape(ek)}"] input[type="checkbox"]`).prop('checked', true);
+        updateEntitySelBadge();
+        runSearch();
+    });
 
-    // 收藏/标签筛选
+    // 分组折叠
+    $('#ta-results').on('click', '.ta-group-head', function () {
+        $(this).closest('.ta-group').toggleClass('ta-collapsed');
+    });
+
+    // 管理筛选（仅收藏 / 仅无标签）
     $('#ta-onlyfav, #ta-untagged').on('change', runSearch);
     $('#ta-tag-list').on('click', '.ta-tag-row', function (e) {
         if ($(e.target).closest('.ta-tag-op, input[type="color"]').length) return;
@@ -321,15 +340,15 @@ function wireEvents() {
     });
     $('#ta-orphan-ignore').on('click', () => $('#ta-orphan').addClass('ta-hidden'));
 
-    // 结果区事件委托
+    // 结果区事件委托（跳转后关闭面板，否则面板盖着聊天看不到定位）
     $('#ta-results').on('click', '.ta-jump', function () {
         const card = $(this).closest('[data-key]');
         const meta = state.chats.get(card.attr('data-key'));
-        if (meta) jumpToMessage(meta, Number(card.attr('data-idx') ?? -1));
+        if (meta) { closePanel(); jumpToMessage(meta, Number(card.attr('data-idx') ?? -1)); }
     });
     $('#ta-results').on('click', '.ta-open', function () {
         const meta = state.chats.get($(this).closest('[data-key]').attr('data-key'));
-        if (meta) jumpToMessage(meta, -1);
+        if (meta) { closePanel(); jumpToMessage(meta, -1); }
     });
     $('#ta-results').on('click', '.ta-fav', function () {
         const key = $(this).closest('[data-key]').attr('data-key');
@@ -405,6 +424,10 @@ function syncViewButtons() {
     $('#ta-view-chat').toggleClass('ta-on', view === 'chat');
     $('#ta-view-msg').toggleClass('ta-on', view === 'message');
     $('#ta-cur-chat').toggleClass('ta-on', onlyCurrentChat);
+    // 「仅无标签」只在聊天视图有意义，消息视图禁用
+    const isMsg = view === 'message';
+    $('#ta-untagged').prop('disabled', isMsg);
+    $('#ta-untagged-row').toggleClass('ta-disabled', isMsg);
 }
 
 // ---------- 筛选状态 ----------
@@ -433,17 +456,22 @@ function collectFilters() {
     }
 
     const tag = $('#ta-tag-list .ta-tag-row.ta-on').data('tag') || null;
+    const onlyFav = $('#ta-onlyfav').prop('checked');
+    // 「仅收藏」含义跟随粒度轴：聊天视图=收藏的聊天，消息视图=收藏的消息
+    const onlyMsgFav = onlyFav && view === 'message';
 
     return {
         entities,
         onlyChatKey: onlyCurrentChat ? currentChatKey() : null,
         sender: $('input[name="ta-sender"]:checked').val() ?? 'all',
         from, to,
-        onlyFav: $('#ta-onlyfav').prop('checked'),
-        onlyUntagged: $('#ta-untagged').prop('checked'),
+        onlyFav: onlyFav && view === 'chat',
+        onlyUntagged: $('#ta-untagged').prop('checked') && view === 'chat',
+        onlyMsgFav,
         tag,
         favorites: settings.favorites,
         chatTags: settings.chatTags,
+        msgFavorites: settings.msgFavorites,
     };
 }
 
@@ -471,42 +499,94 @@ function runSearch() {
         return;
     }
 
-    if (result.matchAll) {
-        // 无关键词：聊天浏览模式
-        currentItems = result.hits.map(h => ({ kind: 'chat', meta: h.meta, count: 0, samples: [] }));
-    } else if (view === 'message') {
-        currentItems = result.hits.map(h => ({ kind: 'message', hit: h }));
-    } else {
-        const byChat = new Map();
+    // 每个角色/群聊的本次命中数 → 筛选列表实时展示
+    let hitCounts = null;
+    if (!result.matchAll) {
+        hitCounts = new Map();
         for (const h of result.hits) {
-            let g = byChat.get(h.chatKey);
-            if (!g) byChat.set(h.chatKey, g = { kind: 'chat', meta: h.meta, count: 0, samples: [] });
-            g.count++;
-            if (g.samples.length < 3) g.samples.push(h);
+            const ek = entityKeyOfMeta(h.meta);
+            hitCounts.set(ek, (hitCounts.get(ek) ?? 0) + 1);
         }
-        currentItems = [...byChat.values()];
+    }
+    rebuildEntityList(hitCounts);
+
+    // chatBrowse = 无关键词且非消息收藏 → 聊天浏览模式
+    const chatBrowse = result.matchAll && !filters.onlyMsgFav;
+
+    // 消息视图下无关键词且无收藏筛选：没有可列出的东西
+    if (view === 'message' && chatBrowse) {
+        resetResults();
+        $('#ta-count').text('');
+        showHint('输入关键词以搜索消息；或勾选左侧「★ 仅收藏」浏览收藏的消息。');
+        return;
     }
 
-    const tsOf = (it) => parseLooseDate(it.kind === 'chat' ? it.meta.lastMes : it.hit.meta.lastMes) ?? 0;
-    currentItems.sort((a, b) => {
-        if (sortMode === 'hits' && a.kind === 'chat' && b.kind === 'chat') return b.count - a.count || tsOf(b) - tsOf(a);
-        if (a.kind === 'message' && b.kind === 'message') return (b.hit.ts ?? 0) - (a.hit.ts ?? 0);
-        return tsOf(b) - tsOf(a);
-    });
+    if (view === 'message' && !chatBrowse) {
+        currentItems = result.hits.map(h => ({ kind: 'message', hit: h }));
+        currentItems.sort((a, b) => (b.hit.ts ?? 0) - (a.hit.ts ?? 0));
+    } else {
+        // 聊天级条目
+        let chatItems;
+        if (chatBrowse) {
+            chatItems = result.hits.map(h => ({ kind: 'chat', meta: h.meta, count: 0, samples: [] }));
+        } else {
+            const byChat = new Map();
+            for (const h of result.hits) {
+                let g = byChat.get(h.chatKey);
+                if (!g) byChat.set(h.chatKey, g = { kind: 'chat', meta: h.meta, count: 0, samples: [] });
+                g.count++;
+                if (g.samples.length < 3) g.samples.push(h);
+            }
+            chatItems = [...byChat.values()];
+        }
+        const tsOf = (it) => parseLooseDate(it.meta.lastMes) ?? 0;
+        chatItems.sort((a, b) => sortMode === 'hits' ? (b.count - a.count || tsOf(b) - tsOf(a)) : tsOf(b) - tsOf(a));
 
-    const chatCount = result.matchAll || view === 'chat'
-        ? currentItems.length
-        : new Set(result.hits.map(h => h.chatKey)).size;
-    $('#ta-count').text(result.matchAll
-        ? `${currentItems.length} 个聊天`
-        : `${chatCount} 个聊天 · ${result.hits.length} 条命中${result.truncated ? '（已截断，请缩小范围）' : ''}`);
+        // 按角色/群聊分组
+        const groups = new Map();
+        for (const it of chatItems) {
+            const ek = entityKeyOfMeta(it.meta);
+            let g = groups.get(ek);
+            if (!g) {
+                groups.set(ek, g = {
+                    kind: 'group',
+                    name: displayName(it.meta),
+                    avatar: it.meta.avatar,
+                    type: it.meta.type,
+                    chats: [], hits: 0, ts: 0,
+                });
+            }
+            g.chats.push(it);
+            g.hits += it.count;
+            g.ts = Math.max(g.ts, tsOf(it));
+        }
+        currentItems = [...groups.values()];
+        currentItems.sort((a, b) => sortMode === 'hits' ? (b.hits - a.hits || b.ts - a.ts) : b.ts - a.ts);
+    }
+
+    // 计数文案
+    if (chatBrowse) {
+        const totalChats = currentItems.reduce((n, g) => n + g.chats.length, 0);
+        $('#ta-count').text(`${totalChats} 个聊天`);
+    } else if (filters.onlyMsgFav && result.matchAll) {
+        $('#ta-count').text(`${result.hits.length} 条收藏消息`);
+    } else {
+        const chatCount = view === 'chat'
+            ? currentItems.reduce((n, g) => n + g.chats.length, 0)
+            : new Set(result.hits.map(h => h.chatKey)).size;
+        $('#ta-count').text(`${chatCount} 个聊天 · ${result.hits.length} 条命中${result.truncated ? '（已截断，各角色计数为下限）' : ''}`);
+    }
 
     resetResults();
 
     if (currentItems.length === 0) {
         if (state.chats.size === 0) {
             showHint('索引里没有任何聊天。先去和角色聊聊，或点击右下角「刷新索引」。');
-        } else if (result.matchAll) {
+        } else if (filters.onlyMsgFav) {
+            showHint('还没有收藏的消息。搜索后，在消息卡片上点 ☆ 收藏。');
+        } else if (filters.onlyFav) {
+            showHint('还没有收藏的聊天。在聊天卡片上点 ☆ 即可收藏。');
+        } else if (chatBrowse) {
             showHint('没有符合筛选条件的聊天，试试放宽筛选。');
         } else {
             showHint('没有命中的结果，试试更换关键词或放宽筛选。');
@@ -522,7 +602,7 @@ function runSearchSoft() {
 }
 
 function resetResults() {
-    $('#ta-results .ta-card, #ta-results .ta-hint').remove();
+    $('#ta-results .ta-card, #ta-results .ta-group, #ta-results .ta-hint').remove();
     renderPos = 0;
 }
 
@@ -531,16 +611,35 @@ function renderBatch() {
     const parsed = parseQuery($('#ta-q').val());
     const settings = getSettings();
     const frag = document.createDocumentFragment();
-    const end = Math.min(renderPos + BATCH, currentItems.length);
+    const isGroup = currentItems[renderPos]?.kind === 'group';
+    const batch = isGroup ? 5 : BATCH;
+    const end = Math.min(renderPos + batch, currentItems.length);
     for (let k = renderPos; k < end; k++) {
         const it = currentItems[k];
         const el = it.kind === 'message'
             ? msgCardHtml(it.hit, parsed, settings)
-            : chatCardHtml(it, parsed, settings);
+            : it.kind === 'group'
+                ? groupHtml(it, parsed, settings)
+                : chatCardHtml(it, parsed, settings);
         frag.appendChild($(el)[0]);
     }
     renderPos = end;
     $('#ta-sentinel').before(frag);
+}
+
+/** 角色/群聊分组容器 */
+function groupHtml(g, parsed, settings) {
+    const av = g.type === 'char' && g.avatar
+        ? `<img class="ta-av" src="/characters/${encodeURIComponent(g.avatar)}" alt="" onerror="this.style.visibility='hidden'">`
+        : '<span class="ta-av ta-av-group fa-solid fa-users"></span>';
+    const sub = g.hits > 0
+        ? `${g.chats.length} 个聊天 · ${g.hits} 条命中`
+        : `${g.chats.length} 个聊天`;
+    return `
+<div class="ta-group">
+  <div class="ta-group-head">${av}<b>${escapeHtml(g.name)}</b><span class="ta-badge">${sub}</span><i class="fa-solid fa-chevron-down ta-group-arrow"></i></div>
+  <div class="ta-group-body">${g.chats.map(c => chatCardHtml(c, parsed, settings)).join('')}</div>
+</div>`;
 }
 
 // ---------- 卡片 ----------
@@ -627,12 +726,12 @@ function msgCardHtml(hit, parsed, settings) {
 $(document).on('click', '.ta-excerpt.ta-jumpable', function () {
     const card = $(this).closest('[data-key]');
     const meta = state.chats.get(card.attr('data-key'));
-    if (meta) jumpToMessage(meta, Number(this.dataset.idx ?? -1));
+    if (meta) { closePanel(); jumpToMessage(meta, Number(this.dataset.idx ?? -1)); }
 });
 
 // ---------- 列表构建 ----------
 
-function rebuildEntityList() {
+function rebuildEntityList(hitCounts = null) {
     if (!built) return;
     const agg = new Map(); // entityKey -> { name, avatar, type, count }
     for (const meta of state.chats.values()) {
@@ -646,17 +745,28 @@ function rebuildEntityList() {
     );
     const hadRows = $('#ta-ent-list .ta-ent-row').length > 0;
 
-    const rows = [...agg.entries()]
-        .sort((a, b) => a[1].name.localeCompare(b[1].name, 'zh'))
-        .map(([ek, a]) => {
-            const checked = hadRows ? prevChecked.has(ek) : true;
-            const av = a.type === 'char'
-                ? `<img class="ta-av" src="/characters/${encodeURIComponent(a.avatar)}" alt="" onerror="this.style.visibility='hidden'">`
-                : '<span class="ta-av ta-av-group fa-solid fa-users"></span>';
-            return `<label class="checkbox_label ta-ent-row" data-ent="${escapeHtml(ek)}" data-name="${escapeHtml(a.name.toLowerCase())}">
-                <input type="checkbox" ${checked ? 'checked' : ''}>${av}<span class="ta-ent-name">${escapeHtml(a.name)}</span><em>${a.count}</em>
-            </label>`;
-        }).join('');
+    const entries = [...agg.entries()];
+    entries.sort((a, b) => {
+        if (hitCounts) {
+            const ha = hitCounts.get(a[0]) ?? 0, hb = hitCounts.get(b[0]) ?? 0;
+            if (ha !== hb) return hb - ha; // 命中的排前面
+        }
+        return a[1].name.localeCompare(b[1].name, 'zh');
+    });
+
+    const rows = entries.map(([ek, a]) => {
+        const checked = hadRows ? prevChecked.has(ek) : true;
+        const hits = hitCounts?.get(ek) ?? 0;
+        const av = a.type === 'char'
+            ? `<img class="ta-av" src="/characters/${encodeURIComponent(a.avatar)}" alt="" onerror="this.style.visibility='hidden'">`
+            : '<span class="ta-av ta-av-group fa-solid fa-users"></span>';
+        return `<label class="checkbox_label ta-ent-row ${hitCounts && !hits ? 'ta-zero' : ''}" data-ent="${escapeHtml(ek)}" data-name="${escapeHtml(a.name.toLowerCase())}">
+            <input type="checkbox" ${checked ? 'checked' : ''}>${av}<span class="ta-ent-name">${escapeHtml(a.name)}</span>
+            ${hitCounts ? `<b class="ta-hits">${hits}</b>` : ''}
+            <span class="ta-ent-only" title="只搜索这个角色/群聊">仅看</span>
+            <em>${a.count}</em>
+        </label>`;
+    }).join('');
 
     $('#ta-ent-list').html(rows || '<div class="ta-hint">（索引为空）</div>');
     filterEntityRows();
@@ -715,17 +825,25 @@ function updateStatusBar() {
     $('#ta-stats').text(`${chars} 角色 · ${groups} 群聊 · ${state.chats.size} 聊天 · ${msgCount} 条消息`);
 
     const at = getSettings().lastIndexAt;
-    $('#ta-updated').text(at ? `上次更新 ${new Date(at).toLocaleString()}` : '尚未建立索引');
+    $('#ta-updated').text(at ? `上次更新 ${relTime(at)}` : '尚未建立索引');
 
     if (state.indexing && state.progress) {
         $('#ta-progress').removeClass('ta-hidden');
         const { done, total, label } = state.progress;
         const pct = total ? Math.round((done / total) * 100) : 0;
         $('#ta-progress-fill').css('width', `${pct}%`);
-        $('#ta-progress-label').text(total ? `${label} ${done}/${total}` : label);
+        $('#ta-progress-label').text(total ? `${label} ${done}/${total}（可关闭面板，索引在后台继续）` : label);
     } else {
         $('#ta-progress').addClass('ta-hidden');
     }
+}
+
+function relTime(t) {
+    const diff = Date.now() - t;
+    if (diff < 60_000) return '刚刚';
+    if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+    if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
+    return new Date(t).toLocaleDateString();
 }
 
 function checkOrphans() {
@@ -760,3 +878,5 @@ function debounce(fn, ms) {
         t = setTimeout(() => fn.apply(this, args), ms);
     };
 }
+
+const debouncedSearch = debounce(runSearch, 300);

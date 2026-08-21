@@ -1,32 +1,34 @@
 /* Tavern Archive — 只使用 ST 主题变量，随用户主题自动适配 */
 
-/* ---------- 遮罩与面板 ---------- */
-#ta-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 30000; /* 必须高于 ST 的 .draggable(9999) 与移动端遮罩(4100) 等所有元素 */
-    background: rgba(0, 0, 0, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#ta-overlay.ta-hidden { display: none; }
-
+/* ---------- 面板：覆盖主内容区，与 ST 自带面板（用户设置/世界书）同区域同形态 ---------- */
 #ta-panel {
-    /* 显式视口单位，不用百分比：部分移动端环境下百分比高度会解析成 0 */
-    width: 92vw;
-    max-width: 1200px;
-    height: 90vh;
+    /* 与 #sheld 完全相同的定位：宽 sheldWidth、居中、顶栏下方 */
+    position: fixed;
+    top: var(--topBarBlockSize, 50px);
+    left: calc((100vw - var(--sheldWidth, 100vw)) / 2);
+    left: calc((100dvw - var(--sheldWidth, 100vw)) / 2);
+    width: var(--sheldWidth, 100vw);
+    height: calc(100vh - var(--topBarBlockSize, 50px) - 1px);
+    height: calc(100dvh - var(--topBarBlockSize, 50px) - 1px);
+    z-index: 30000; /* 高于 ST 的 .draggable(9999) 与移动端遮罩(4100) 等所有元素 */
     display: flex;
     flex-direction: column;
-    background: var(--SmartThemeBlurTintColor, rgba(20, 20, 30, 0.92));
+    background: var(--SmartThemeBlurTintColor, rgba(20, 20, 30, 0.95));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
-    border-radius: 12px;
+    border-left: 1px solid var(--SmartThemeBorderColor, #555);
+    border-right: 1px solid var(--SmartThemeBorderColor, #555);
+    box-shadow: 0 0 25px var(--black70a, rgba(0, 0, 0, 0.7));
     color: var(--SmartThemeBodyColor, #eee);
     overflow: hidden;
+    animation: taSlideDown 0.18s ease;
 }
+
+@keyframes taSlideDown {
+    from { transform: translateY(-12px); opacity: 0.5; }
+    to { transform: none; opacity: 1; }
+}
+
+.ta-hidden { display: none !important; }
 
 /* ---------- 头部 ---------- */
 #ta-panel .ta-header {
@@ -102,7 +104,7 @@
     font-size: 0.9em;
 }
 
-#ta-progress.ta-hidden, #ta-orphan.ta-hidden, .ta-hidden { display: none !important; }
+#ta-progress.ta-hidden, #ta-orphan.ta-hidden { display: none !important; }
 
 /* ---------- 主体布局 ---------- */
 #ta-panel .ta-body {
@@ -412,24 +414,12 @@
     border-radius: 8px;
 }
 
-/* ---------- 手机端（<768px）：全屏 + 底部筛选抽屉 ---------- */
+/* ---------- 窄屏（<768px）：面板拉满全宽（同 ST mobile-styles 对 #sheld 的处理），仅筛选栏改为底部抽屉 ---------- */
 @media (max-width: 768px) {
-    #ta-overlay {
-        width: 100vw;
-        height: 100vh;
-        height: 100dvh;
-    }
-
     #ta-panel {
-        position: fixed;  /* 显式视口单位钉死全屏，不依赖任何父容器高度计算 */
-        top: 0;
         left: 0;
         width: 100vw;
-        height: 100vh;
-        height: 100dvh;
-        max-width: none;
-        border-radius: 0;
-        border: none;
+        width: 100dvw;
     }
 
     #ta-filter-toggle { display: inline-flex; }
@@ -463,3 +453,81 @@
 
     .ta-act, .ta-flag, .ta-close { padding: 8px; }
 }
+
+/* ---------- 搜索框清除按钮 ---------- */
+.ta-clear {
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 4px 6px;
+    font-size: 1.1em;
+    flex-shrink: 0;
+}
+
+.ta-clear:hover { opacity: 1; }
+
+/* ---------- 角色/群聊分组 ---------- */
+.ta-group {
+    margin-bottom: 14px;
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.ta-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    background: var(--black30a, rgba(0, 0, 0, 0.3));
+    user-select: none;
+}
+
+.ta-group-head:hover { background: rgba(127, 127, 127, 0.18); }
+
+.ta-group-arrow { margin-left: auto; opacity: 0.6; transition: transform 0.15s; }
+
+.ta-group.ta-collapsed .ta-group-arrow { transform: rotate(-90deg); }
+
+.ta-group.ta-collapsed .ta-group-body { display: none; }
+
+.ta-group-body { padding: 10px 10px 0; }
+
+.ta-group-body .ta-card:last-child { margin-bottom: 10px; }
+
+/* ---------- 实体筛选行：命中数与仅看 ---------- */
+.ta-ent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ta-ent-row em { margin-left: 0; }
+
+.ta-hits {
+    font-size: 0.8em;
+    background: var(--SmartThemeEmColor, #c9a959);
+    color: #111;
+    border-radius: 8px;
+    padding: 0 6px;
+    flex-shrink: 0;
+}
+
+.ta-ent-row.ta-zero { opacity: 0.45; }
+
+.ta-ent-row.ta-zero .ta-hits { background: none; color: inherit; border: 1px solid var(--SmartThemeBorderColor, #555); }
+
+.ta-ent-only {
+    font-size: 0.78em;
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 8px;
+    padding: 0 6px;
+    cursor: pointer;
+    opacity: 0;
+    flex-shrink: 0;
+}
+
+.ta-ent-row:hover .ta-ent-only { opacity: 0.8; }
+
+.ta-ent-only:hover { background: var(--SmartThemeEmColor, #c9a959); color: #111; opacity: 1 !important; }
+
+/* ---------- 禁用态与辅助说明 ---------- */
+.ta-disabled { opacity: 0.4; pointer-events: none; }
+
+.ta-sub { opacity: 0.55; font-size: 0.82em; }
